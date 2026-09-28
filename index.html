@@ -221,9 +221,22 @@ function setTile(c, r, type) {
 }
 function isSolidTile(c, r, forBullet = false) {
   const t = tileAt(c, r);
-  if (!t) return true; // 出界视为墙
+  if (t === null) return true;         // 出界视为墙
+  if (t === T.EMPTY || t === T.GRASS) return false;
   if (t === T.WATER) return !forBullet; // 子弹可越过水面
   return t === T.BRICK || t === T.STEEL || t === T.BASE;
+}
+
+// 判断某点是否可作为坦克出生点（所在格必须为空地/草丛，且不越界）
+function isSpawnFree(x, y) {
+  const c1 = Math.floor(x / TILE), r1 = Math.floor(y / TILE);
+  const c2 = Math.floor((x + TANK - 1) / TILE), r2 = Math.floor((y + TANK - 1) / TILE);
+  for (let r = r1; r <= r2; r++)
+    for (let c = c1; c <= c2; c++) {
+      const t = tileAt(c, r);
+      if (t === null || t === T.BRICK || t === T.STEEL || t === T.WATER || t === T.BASE) return false;
+    }
+  return true;
 }
 
 function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
@@ -474,12 +487,21 @@ function setupEnemies() {
 }
 function updateSpawns() {
   if (spawnTimer > 0) spawnTimer--;
-  const spawns = [{ x: 0 * TILE + 3, y: 0 }, { x: 6 * TILE + 3, y: 0 }, { x: 12 * TILE + 3, y: 0 }];
+  const spawns = [
+    { x: 0 * TILE + 3, y: 1 * TILE + 3 },
+    { x: 6 * TILE + 3, y: 1 * TILE + 3 },
+    { x: 12 * TILE + 3, y: 1 * TILE + 3 },
+  ];
   if (enemiesToSpawn > 0 && enemiesOnField < 3 && spawnTimer <= 0) {
-    const s = choice(spawns);
-    const e = new Enemy(s.x, s.y);
+    // 随机顺序挑选出生点，跳过被墙占据或与坦克重叠的位置
+    const order = spawns.slice().sort(() => Math.random() - 0.5);
+    const spot = order.find(s => {
+      if (!isSpawnFree(s.x, s.y)) return false;
+      return !tanks.some(t => t.alive && rectsOverlap(s.x, s.y, TANK, TANK, t.x, t.y, TANK, TANK));
+    });
+    if (!spot) return; // 三个出生点均被占用，等待下一次
+    const e = new Enemy(spot.x, spot.y);
     e.born = 90;
-    if (tanks.some(t => t.alive && rectsOverlap(e.x, e.y, TANK, TANK, t.x, t.y, TANK, TANK))) return;
     tanks.push(e);
     enemiesOnField++;
     enemiesToSpawn--;
@@ -681,6 +703,7 @@ function drawPowerups() {
     ctx.font = "bold 14px sans-serif";
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText(p.type === "shield" ? "S" : "+1", 0, 1);
+    ctx.textBaseline = "alphabetic";
     ctx.restore();
   }
 }
